@@ -13,5 +13,9 @@ Input resource:
 
 
 Part 1. Exploratory analysis: data cleaning & understanding characteristics of dataset
+
+
 Part 2. Time-series forecast: Random Walk, Simple Exponential Smoothing, Holt'trend, and ARIMA (Autoregressive Integrated Moving Average)
+
+
 Part 3. Study the influencing factors by using machine learning technique: Multiple Linear Regression
