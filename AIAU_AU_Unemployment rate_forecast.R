@@ -1,3 +1,4 @@
+#-------------------------------------------------#-------------------------------------------------#
 library(readabs) #package to read and clean the time-series dataset from Australia Bureau of Statistics
 library(dplyr) 
 library(tidyverse)
@@ -222,7 +223,6 @@ Un.quar[,2] <- NULL #remove the outdated date format
 
 ##Narrow-down the dataset to Jan 2019-Nov2020 period to navigate the influences of Covid-19
 Un.quar.1920 <- tail(Un.quar,7) #the dataset contains observations recorded quarterly
-
 #Plot the dataset GDP from 1Q2019 to 3Q2020
 Un.quar.1920 %>% 
   as.data.frame() %>%
@@ -321,7 +321,7 @@ mape <- function(actual,pred){
 
 randomwalk <- rwf(train.ts,h=3) %>% 
   as.data.frame()
-
+randomwalk
 randomwalk <- randomwalk$`Point Forecast` %>% 
   as.data.frame() 
 
@@ -354,17 +354,20 @@ mape.ses
 
 holt_model  <- holt(train.ts,h=3)
 holt_model <- as.data.frame(holt_model)
-
-#the model forecast the unemployment rate increase continuously by time with MAPE on training set equal to 2.14
+summary(holt_model) 
+#the model forecast the unemployment rate increase continuously by time with MAPE on training set equal to 2.162925
 #evaluate the model performance
 holt <- holt_model$`Point Forecast` %>%
   as.data.frame() 
 test.ts <- cbind(test.ts,holt) 
 colnames(test.ts) <- c("Un_rate","RWF","ses","holt")
-
+holt
 mape.holt <- mape(test.ts$Un_rate,test.ts$holt)
 mape.holt
 #MAPE: 4.224371 ; decreasing the level of accuracy compare to both Random Walk and Simple Exponential Smoothing models
+#MAPE of train data < MAPE of test data, indicating the overfiting problem
+
+
 
 #Arima model
 #as the condition to perform Arima forecast is that the dataset has to be stationary
@@ -389,6 +392,7 @@ test_diff.ts <- window(Un_rated_diff.ts, start=c(2020,9),end=c(2020,11),frequenc
 arima_model <- auto.arima(train_diff.ts)
 fore_arima <- forecast::forecast(arima_model,h=3) %>%
   as.data.frame()
+
 #Assign the obtained data into the arima.ts dataset
 arima.ts <- fore_arima$`Point Forecast` %>%
   as.data.frame()
@@ -615,7 +619,7 @@ cor.test <- rcorr(as.matrix(cor.mar.fit))
 
 #Insignificant correlations are leaved blank
 #Test not only correlation but also statistical significant relationship among variables ; variables that have insignificant statistical relationship will be feature blank
-corrplot(cor.test$r, type="lower", order="hclust", p.mat = cor.test$P, sig.level = 0.01, insig = "blank")
+corrplot(cor.test$r, type="lower", order="hclust", p.mat = cor.test$P, sig.level = 0.05, insig = "blank")
 
 #variables that have strong statistical relationship with unemployment rate (p-value < 0.05): GDPchange, GDP price,GDPindex, Domesticdemand, Wage.WAustralia
 #GDPchange, GDP price,GDPindex are all about the aggregate demand ; 
@@ -666,6 +670,7 @@ fit.market <- lm(Unrate~
                    GDPPH+
                    Domesticdemand+
                    Wage.total+
+                  
                    Wage.Queensland+
                    Wage.Victoria+
                    Wage.WAustralia+
@@ -677,34 +682,77 @@ fit.market <- lm(Unrate~
                    GVAPHM+
                    RNNDI,
                  data=data.train.n)
+
 summary(fit.market)
 vif(fit.market)
 #the best R-squared can get after testing available variables on current model: 0.4922 ;
 #VIF of all are lower than 5 except Wage.Total - 8.245884
-#R-squared can be improved  when accepting trade-of between R-squared and VIF 
+#R-squared can be improved  when keep adding new variables
 #For instace, R-squared reaches 0.5107 when adding Wage.NSW, however, Wage.Total goes to 26.297340
-#Currently, only Domesticdemand variable illustrates strong statistical relationship
+#Adjusted R-squared was still pretty low (0.3546) ; adjusted R-squared could be a better indicator to look at. It'll be increase when useful variables are added to the model
+#Besides, only Domesticdemand variable illustrates strong statistical relationship (p-value < 0.05)
 #All variables that did not provide meaningful interpretation if their p-vale lower than 0.05
-#Besides, all added variables related to State's salary are duplicated with Wage.total variable
+#Moreover, all added variables related to State's salary are duplicated with Wage.total variable
 #Wage.total plays crucial roles to the model
-#Hence, decide to adjust standard R-squared to from expected R-squared >= 0.5 to 0.3<expected R-squared<0.5 ; p-value <0.5 & VIF < 10
-#GDPchange & Wage.WAustralia variables would be removed according to above analysis
-fit.market <- lm(Unrate~Domesticdemand+
-                   Wage.total,
-                 data=data.train.n)
-summary(fit.market) #R-Squared: 0.3794 & Adjusted R-squared: 0.3584
-vif(fit.market) #Both numbers are 1.103631
+#Hence, decide to adjust standard R-squared to from expected R-squared >= 0.5 to 0.3<expected R-squared<0.5 ; aiming to get p-value <0.5 & VIF < 10
+#Domesticdemand & Wage.total would be choosen
 
+fit.market <- lm(Unrate~Domesticdemand+Wage.total, data=data.train.n)
+summary(fit.market) 
+#R-squared: 0.3794 & Adjusted R-squared: 0.3584
+vif(fit.market) #vif of both variables : 1.103631
 #Test the accuracy of the model by looking at Mean Square Error (MSE)
 
-pred.new <- predict(fit.market,data=data.test.n) #feed the input from fit model on data.train dataset
+pred.new <- predict(fit.market,newdata=data.test.n) #feed the input from fit model on data.train dataset
 y_test.new <- data.test.n[,"Unrate"]
 pred_err.new <- sqrt(mean((pred.new - y_test.new)^2))
-pred_err.new #RMSE: 0.6650977
-#Formula: Unemployment Rate = 6.2019 + -0.8069*(Domesticdemand) + -0.1643*(Wage.total)
-#Therefore, the efforts to improve national minimum wage & provide support for local enterprises from Government are worth.
+pred_err.new #RMSE: 0.7092026
+
+#Formula: Quarterly Unemployment rate (%) = 6.16691+ -0.92121 *(%change of domestic demand) + -0.17724 * (%change of wage total)
+#Standard deviation of residuals: 0.7092026
 
 #For model improvement, real-time data collected is required to generate more meaningful insights
 #The decision to use 2 quarterly datasets from difference resources is made due to the shortage of data
 #Some indicators were not recorded fully ; methods to treat missing data such as adding mean/median of those variables into those NAs places could be conducted
 #However, there is also a risk that those added values could not reflect the characteristics of missing value ; the context, when data is available - 2000s towards, is different with 1980s & 1990s
+
+#Apply prediction model to calculate the unemployment rate 3Q2020 & 1Q2020
+#Wages quarterly percentage change ;  Total (State) ;  Total (Industry) ;  Current Price ;  TOTAL (SCP_SCOPE): 2.4
+#Domestic final demand: Index - Percentage changes ; 3Q2020: -0.1
+
+#Normal case: total wage & domestic domestic demand growth with the same pace within the previous quarter 
+#Good case: total wage will be increased 4.15 (current rate - 2.4 + new policy suggested to increase 1.75% national minimum wage) & domestic demand will not be decreased - %change = 0
+#Worse case: total wage will be increased 1.75 (not growth but was pushed by the government policy) & domestic demand will not growth
+
+#Normal case
+domesticdemand_3Q2020 <- tail(Domestic_demand,1)
+Wage.total_3Q2020 <- tail(Wage.total,1)
+
+pred.unrate.4Q2020 <- 6.16691 + -0.92121 *domesticdemand_3Q2020 + -0.17724*(Wage.total_3Q2020)
+pred.unrate.4Q2020.high <- pred.unrate.3Q2020+pred_err.new
+pred.unrate.4Q2020.low <- pred.unrate.3Q2020-pred_err.new
+unrate.pred.normal <- cbind(pred.unrate.4Q2020,pred.unrate.4Q2020.high,pred.unrate.4Q2020.low)
+colnames(unrate.pred.normal) <- c("normal","high","low")
+
+#worst case
+
+worst.pred.unrate.4Q2020 <- 6.16691 + -0.92121 *0 + -0.17724*1.75
+worst.pred.unrate.4Q2020.high <- worst.pred.unrate.4Q2020+pred_err.new
+worst.pred.unrate.4Q2020.low <- worst.pred.unrate.4Q2020-pred_err.new
+unrate.pred.worst <- cbind(worst.pred.unrate.4Q2020,worst.pred.unrate.4Q2020.high,worst.pred.unrate.4Q2020.low)
+colnames(unrate.pred.worst) <- c("normal","high","low")
+
+#good case
+
+good.pred.unrate.4Q2020 <- 6.16691 + -0.92121 *0 + -0.17724*4.15
+good.pred.unrate.4Q2020.high <- good.pred.unrate.4Q2020+pred_err.new
+good.pred.unrate.4Q2020.low <- good.pred.unrate.4Q2020-pred_err.new
+unrate.pred.good <- cbind(good.pred.unrate.4Q2020,good.pred.unrate.4Q2020.high,good.pred.unrate.4Q2020.low)
+colnames(unrate.pred.good) <- c("normal","high","low")
+
+#table
+pred.table <- rbind(unrate.pred.good,unrate.pred.normal,unrate.pred.worst)
+rownames(pred.table) <- c("good_case","normal_case","worse_case")
+pred.table
+
+#-------------------------------------------------#-------------------------------------------------#
